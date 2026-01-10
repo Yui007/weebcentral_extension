@@ -1,119 +1,189 @@
-# WeebCentral Downloader
+<div align="center">
 
-A powerful browser extension for downloading manga chapters from weebcentral.com.
+# 📚 WeebCentral Downloader
 
-![WeebCentral Downloader](icons/icon128.png)
+### *Download manga chapters from weebcentral.com with ease*
 
-# Script
-
-If You Don't want extension I have also created a script for it which is very fast. https://github.com/Yui007/weebcentral_downloader
-
-## Features
-
-- **Direct Image Download**: Download all images from a manga chapter with a single click
-- **ZIP Download**: Package all chapter images into a convenient ZIP file
-- **Batch Processing**: Download multiple chapters at once
-- **Customizable Settings**: Adjust Delay and concurrent downloads
-- **Chapter Range Selection**: Choose specific chapters to download
-- **Progress Tracking**: Monitor download progress in real-time
-
-## Supported Sites
-
-- weebcentral.com
-
-## Supported Browsers
-
-- Google Chrome
-- Microsoft Edge
-
-## Installation
-
-### From Browser Extension Stores
-*(Coming Soon)*
-
-### Manual Installation
-1. Git Clone The Repository
-3. Open Chrome and go to `chrome://extensions/`
-4. Enable "Developer mode" in the top-right corner
-5. Click "Load unpacked" and select the unzipped folder
-6. The extension should now appear in your extensions list
-
-## How to Use
-
-### Basic Usage
-
-1. Navigate to a manga chapter page on weebcentral.com
-2. Click the WeebCentral Downloader icon in your browser toolbar
-3. Choose one of the download options:
-   - **Download Images**: Save all images individually
-   - **Download as ZIP**: Package all images into a ZIP file
-
-### Advanced Features
-
-#### Download Settings
-- **Download Delay**: Adjust the time between downloads (ms)
-- **Concurrent Downloads**: Set how many images to download simultaneously
-- Click "Save Settings" to apply changes
-
-#### Manga Series Download
-1. Navigate to a manga series page on weebcentral.com
-2. Click the WeebCentral Downloader icon
-3. Click "Fetch All Chapters" Or enter a chapter range in the format "1-10,20-25"
-4. Select the chapters you want to download
-5. Click "Download Selected"
-
-## Troubleshooting
-
-### Common Issues
-
-- **No Images Found**: Try refreshing the page and ensuring all images are loaded
-- **Download Fails**: The site may block rapid downloads; try increasing the download delay
-- **Chapter List Not Loading**: Make sure you're on a manga series page, not a chapter page
-
-### Reporting Bugs
-
-If you encounter any issues, please [open an issue](https://github.com/yourusername/weebcentral-downloader/issues) with:
-- A description of the problem
-- The URL where the issue occurred
-- Any error messages from the console (press F12 to open developer tools)
-
-## Privacy
-
-This extension:
-- Does NOT collect any personal data
-- Does NOT track your browsing history
-- Only requests permissions necessary for downloading manga
-- All processing happens locally on your device
-
-## Development
-
-### Project Structure
-```
-weebcentral-downloader/
-├── manifest.json        # Extension configuration
-├── popup.html           # Extension popup UI
-├── popup.js             # Popup functionality
-├── content.js           # Content script for manga pages
-├── background.js        # Background service worker
-├── manga-scraper.js     # Manga scraping functionality
-├── jszip.min.js         # ZIP file creation library
-└── icons/               # Extension icons
-```
-
-### Building from Source
-1. Clone the repository
-2. Make your changes
-3. Load the unpacked extension in Chrome or Edge for testing
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [JSZip](https://stuk.github.io/jszip/) for ZIP file creation
-- The open-source community for inspiration and resources
+[![Chrome](https://img.shields.io/badge/Chrome-Supported-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://www.google.com/chrome/)
+[![Edge](https://img.shields.io/badge/Edge-Supported-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white)](https://www.microsoft.com/edge)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
 ---
 
-*Note: This extension is not affiliated with or endorsed by weebcentral.com. It is a tool created by fans, for fans.*
+![WeebCentral Downloader](Popup.PNG)
+
+</div>
+
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| 🖼️ **Multiple Download Formats** | Download as individual images, ZIP archives, or PDF documents |
+| 📑 **Batch Chapter Download** | Select and download multiple chapters at once |
+| 🎯 **Chapter Range Selection** | Use ranges like `1-10, 15, 20-25` to quickly select chapters |
+| ⚡ **Quick Download Button** | Green download button on chapter pages for instant downloads |
+| ⚙️ **Customizable Settings** | Adjust download delay and concurrent download limits |
+| 📊 **Real-time Progress** | Track download progress with status updates |
+
+---
+
+## 🔗 Alternative: Python Script
+
+> **Prefer a standalone solution?** Check out the [WeebCentral Downloader Script](https://github.com/Yui007/weebcentral_downloader) - a fast Python-based alternative!
+
+---
+
+## 🚀 Installation
+
+### Manual Installation (Developer Mode)
+
+1. **Clone or download** this repository
+   ```bash
+   git clone https://github.com/Yui007/weebcentral_extension.git
+   ```
+
+2. **Open your browser's extension page**
+   - Chrome: `chrome://extensions/`
+   - Edge: `edge://extensions/`
+
+3. **Enable Developer Mode** (toggle in top-right corner)
+
+4. **Click "Load unpacked"** and select the extension folder
+
+5. **Done!** The extension icon will appear in your toolbar
+
+---
+
+## 📖 How to Use
+
+### Quick Download (Single Chapter)
+
+1. Navigate to any **chapter page** on weebcentral.com
+2. Click the **green "Download Chapter"** button in the top-right corner
+3. Images will download in your selected format (set in Settings)
+
+### Batch Download (Multiple Chapters)
+
+1. Navigate to a **manga series page** on weebcentral.com
+2. Click the **extension icon** in your browser toolbar
+3. Chapters will be fetched automatically
+4. **Select chapters** using:
+   - Checkboxes for individual selection
+   - Range input (e.g., `1-10, 15, 20-25`)
+   - "All" or "None" buttons
+5. Click **"Download Selected"**
+
+### Download Formats
+
+Configure your preferred format in the **Settings** tab:
+
+| Format | Output |
+|--------|--------|
+| **Images** | Individual `.jpg` files organized in folders |
+| **ZIP** | One `.zip` archive per chapter |
+| **PDF** | One `.pdf` document per chapter |
+
+---
+
+## ⚙️ Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Download Format** | Images, ZIP, or PDF | Images |
+| **Download Delay** | Milliseconds between downloads | 300ms |
+| **Image Concurrency** | Simultaneous image downloads | 3 |
+| **Chapter Concurrency** | Simultaneous chapter processing | 1 |
+
+---
+
+## 🔧 Troubleshooting
+
+<details>
+<summary><b>❌ No images found</b></summary>
+
+- Scroll through the chapter page to ensure all images are loaded
+- Refresh the page and try again
+- Check if the site is loading images from a different domain
+
+</details>
+
+<details>
+<summary><b>❌ Download fails or incomplete</b></summary>
+
+- Increase the **Download Delay** in Settings
+- Reduce **Image Concurrency** to 1 or 2
+- Check your internet connection
+
+</details>
+
+<details>
+<summary><b>❌ Chapters not loading</b></summary>
+
+- Make sure you're on a **manga series page**, not a chapter page
+- The URL should look like: `weebcentral.com/series/...`
+
+</details>
+
+<details>
+<summary><b>❌ PDF generation fails</b></summary>
+
+- PDF generation opens a background tab - allow popups if blocked
+- Large chapters may take longer to process
+
+</details>
+
+---
+
+## 📁 Project Structure
+
+```
+weebcentral_extension/
+├── 📄 manifest.json        # Extension configuration
+├── 📄 popup.html           # Extension popup UI
+├── 📄 popup.js             # Popup initialization
+├── 📄 logic.js             # Core popup logic
+├── 📄 ui.js                # UI management
+├── 📄 settings.js          # Settings management
+├── 📄 content.js           # Content script (green button)
+├── 📄 background.js        # Background service worker
+├── 📄 manga-scraper.js     # Manga scraping & downloading
+├── 📄 pdf-generator.html   # PDF generation page
+├── 📄 pdf-generator.js     # PDF generation logic
+├── 📄 jszip.min.js         # ZIP creation library
+├── 📄 jspdf.min.js         # PDF creation library
+├── 📄 styles.css           # Popup styles
+└── 📁 icons/               # Extension icons
+```
+
+---
+
+## 🔒 Privacy
+
+This extension:
+- ✅ Does **NOT** collect any personal data
+- ✅ Does **NOT** track your browsing history  
+- ✅ Processes everything **locally** on your device
+- ✅ Only requests **necessary** permissions
+
+---
+
+## 📜 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- [JSZip](https://stuk.github.io/jszip/) - ZIP file creation
+- [jsPDF](https://github.com/parallax/jsPDF) - PDF document generation
+
+---
+
+<div align="center">
+
+*This extension is not affiliated with or endorsed by weebcentral.com*
+
+**Made with ❤️ by manga fans, for manga fans**
+
+</div>
