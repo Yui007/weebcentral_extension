@@ -24,8 +24,13 @@ if (isChapterPage) {
   downloadBtn.style.borderRadius = '4px';
   downloadBtn.style.cursor = 'pointer';
 
-  downloadBtn.addEventListener('click', () => {
+  downloadBtn.addEventListener('click', async () => {
     console.log('Download button clicked');
+
+    // Get download format from settings
+    const settings = await chrome.storage.local.get(['downloadFormat', 'downloadDelay', 'imageConcurrency']);
+    const downloadFormat = settings.downloadFormat || 'images';
+    const downloadDelay = settings.downloadDelay || 300;
 
     // For weebcentral.com, extract manga name from page content
     let mangaName = 'unknown';
@@ -63,134 +68,101 @@ if (isChapterPage) {
 
     // If we couldn't get chapter number from title, try from URL
     if (chapterNum === 'unknown') {
-      // For URLs like https://weebcentral.com/chapters/01J76XYSNJDQCG2T1AW43Z34Y1
-      // We'll use the last part as a unique identifier
       const urlParts = window.location.pathname.split('/');
       if (urlParts.length > 0) {
         const lastPart = urlParts[urlParts.length - 1];
         if (lastPart) {
-          chapterNum = lastPart.substring(0, 8); // Use first 8 chars as identifier
+          chapterNum = lastPart.substring(0, 8);
         }
       }
     }
 
-    console.log(`Detected manga: ${mangaName}, chapter: ${chapterNum}`);
+    console.log(`Detected manga: ${mangaName}, chapter: ${chapterNum}, format: ${downloadFormat}`);
 
     // Create folder name for downloads
-    const folderName = `${mangaName}_ch${chapterNum}`;
+    const folderName = `${mangaName}_ch${chapterNum}`.replace(/[\\/*?:"<>|]/g, '_');
 
     // Wait a bit for images to load fully
     setTimeout(() => {
       // Improved image selectors for weebcentral.com
       let images = [];
 
-      // Common selectors for manga sites, prioritizing weebcentral.com selectors
       const selectors = [
-        'img[src*="/manga/"]',  // Key selector from your Python script
-        'img[src*="/chapters/"]', // Another possible weebcentral.com pattern
+        'img[src*="/manga/"]',
+        'img[src*="/chapters/"]',
         '.reader-content img',
         '.chapter-content img',
         '.manga-reader img',
         '.reader img',
         '.chapter img',
-        '.container img[src*="chapter"]',
         'img[src*="chapter"]',
         'img[src*=".jpg"], img[src*=".png"], img[src*=".jpeg"]'
       ];
 
-      // Try each selector until we find images
       for (const selector of selectors) {
-        console.log(`Trying selector: ${selector}`);
         const found = Array.from(document.querySelectorAll(selector))
-          .filter(img => img.src && img.width > 100); // Filter out small icons
-
-        console.log(`Found ${found.length} images with selector: ${selector}`);
-
+          .filter(img => img.src && img.width > 100);
         if (found.length > 0) {
-          images = found;
-          console.log(`Selected ${images.length} images using selector: ${selector}`);
-          break;
+          found.forEach(img => {
+            if (!images.some(i => i.src === img.src)) images.push(img);
+          });
         }
       }
 
-      // If no images found with specific selectors, try getting all images
-      if (images.length === 0) {
-        console.log('No images found with specific selectors, trying all images');
-        images = Array.from(document.querySelectorAll('img'))
-          .filter(img => img.src && img.width > 100 && !img.src.includes('data:'));
-        console.log(`Found ${images.length} images with general selector`);
-      }
+      // Filter out unwanted images
+      images = images.filter(img => {
+        const src = img.src.toLowerCase();
+        return !['avatar', 'icon', 'logo', 'banner', 'brand'].some(word => src.includes(word));
+      });
 
       if (images.length === 0) {
         console.log('No manga images found on this page');
         return;
       }
 
-      // Sort images by their vertical position
-      images.sort((a, b) => {
-        const aRect = a.getBoundingClientRect();
-        const bRect = b.getBoundingClientRect();
-        return aRect.top - bRect.top;
-      });
+      console.log(`Found ${images.length} images, downloading as ${downloadFormat}`);
 
-      // Filter out unwanted images (like avatars, icons, etc.)
-      images = images.filter(img => {
-        const src = img.src.toLowerCase();
-        return !['avatar', 'icon', 'logo', 'banner', 'brand'].some(word => src.includes(word));
-      });
+      const imageUrls = images.map(img => img.src);
 
-      console.log(`Final image count after filtering: ${images.length}`);
-
-      // Use chrome.runtime.sendMessage to send download requests to background script
-      let downloadCount = 0;
-      const processedUrls = new Set();
-
-      // Process downloads sequentially to avoid browser blocking
-      function downloadNext(index) {
-        if (index >= images.length) {
-          console.log(`Downloaded ${downloadCount} images from chapter ${chapterNum}`);
-          return;
-        }
-
-        const img = images[index];
-        const imgUrl = img.src;
-        if (!imgUrl) {
-          downloadNext(index + 1);
-          return;
-        }
-
-        // Check for duplicate URLs to prevent downloading the same image multiple times
-        if (processedUrls.has(imgUrl)) {
-          console.log(`Skipping duplicate image: ${imgUrl}`);
-          downloadNext(index + 1);
-          return;
-        }
-        
-        // Mark this URL as processed
-        processedUrls.add(imgUrl);
-
-        console.log(`Downloading image ${index+1}/${images.length}: ${imgUrl}`);
-
-        const filename = `${folderName}/${(index+1).toString().padStart(3, '0')}.jpg`;
-
-        // Send message to background script to handle download
+      // Choose download method based on format
+      if (downloadFormat === 'pdf') {
         chrome.runtime.sendMessage({
-          action: 'downloadImage',
-          url: imgUrl,
-          filename: filename
-        }, (response) => {
-          if (response && response.success) {
-            downloadCount++;
-          }
-          // Wait a bit before downloading the next image
-          setTimeout(() => downloadNext(index + 1), 300);
+          action: 'createSingleChapterPdf',
+          urls: imageUrls,
+          folderName: folderName,
+          settings: { downloadDelay }
         });
+      } else if (downloadFormat === 'zip') {
+        chrome.runtime.sendMessage({
+          action: 'createSingleChapterZip',
+          urls: imageUrls,
+          folderName: folderName,
+          settings: { downloadDelay }
+        });
+      } else {
+        // Default: individual images
+        let downloadCount = 0;
+        function downloadNext(index) {
+          if (index >= images.length) {
+            console.log(`Downloaded ${downloadCount} images`);
+            return;
+          }
+
+          const imgUrl = images[index].src;
+          const filename = `${folderName}/${(index + 1).toString().padStart(3, '0')}.jpg`;
+
+          chrome.runtime.sendMessage({
+            action: 'downloadImage',
+            url: imgUrl,
+            filename: filename
+          }, (response) => {
+            if (response && response.success) downloadCount++;
+            setTimeout(() => downloadNext(index + 1), downloadDelay);
+          });
+        }
+        downloadNext(0);
       }
-
-      // Start downloading from the first image
-      downloadNext(0);
-
-    }, 2000); // Wait 2 seconds for images to load
+    }, 2000);
   });
 
   document.body.appendChild(downloadBtn);
@@ -218,9 +190,9 @@ async function ensureAllChaptersVisible() {
       // Check if text contains relevant phrases
       const text = el.textContent.toLowerCase();
       if (text.includes('show all') ||
-          text.includes('load more') ||
-          text.includes('show all chapters') ||
-          text.includes('view more')) {
+        text.includes('load more') ||
+        text.includes('show all chapters') ||
+        text.includes('view more')) {
 
         console.log('Found "show more" button, clicking it...', el);
         el.click();
@@ -233,10 +205,10 @@ async function ensureAllChaptersVisible() {
         for (const btn of moreButtons) {
           const btnText = btn.textContent.toLowerCase();
           if ((btnText.includes('show all') ||
-               btnText.includes('load more') ||
-               btnText.includes('show all chapters') ||
-               btnText.includes('view more')) &&
-              btn !== el) {
+            btnText.includes('load more') ||
+            btnText.includes('show all chapters') ||
+            btnText.includes('view more')) &&
+            btn !== el) {
             console.log('Found additional button, clicking it...', btn);
             btn.click();
             // Wait between clicks
@@ -345,10 +317,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 const isMangaListingPage =
   !isChapterPage && // Not a chapter page
   (window.location.href.includes('/manga/') || // Common manga listing URL pattern
-   window.location.href.includes('/series/') || // WeebCentral specific URL pattern
-   document.querySelector('.chapter-list') !== null || // Has chapter list
-   document.querySelector('.chapters-list') !== null || // Alternative class name
-   document.querySelector('a[href*="chapter"]') !== null); // Has links to chapters
+    window.location.href.includes('/series/') || // WeebCentral specific URL pattern
+    document.querySelector('.chapter-list') !== null || // Has chapter list
+    document.querySelector('.chapters-list') !== null || // Alternative class name
+    document.querySelector('a[href*="chapter"]') !== null); // Has links to chapters
 
 console.log('WeebCentral Downloader - Is manga listing page:', isMangaListingPage);
 

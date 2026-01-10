@@ -64,27 +64,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     console.log(`Received request to create ZIP with ${message.urls.length} images`);
     console.log(`Folder name: ${message.folderName}`);
     console.log(`Is current chapter: ${message.isCurrentChapter ? 'Yes' : 'No'}`);
-    
+
     // COMPLETELY NEW APPROACH: Create a fresh array with only unique URLs
     const uniqueUrlMap = new Map();
-    
+
     // Process each URL and ensure uniqueness
     message.urls.forEach((url, index) => {
       if (url && !uniqueUrlMap.has(url)) {
         uniqueUrlMap.set(url, index);
       }
     });
-    
+
     // Convert back to arrays
     const uniqueUrls = Array.from(uniqueUrlMap.keys());
-    
+
     console.log(`DEDUPLICATION RESULTS: ${uniqueUrls.length} unique images from ${message.urls.length} total`);
-    
+
     // Create fresh paths for each unique URL
-    const uniquePaths = uniqueUrls.map((_, index) => 
+    const uniquePaths = uniqueUrls.map((_, index) =>
       `${message.folderName}/${(index + 1).toString().padStart(3, '0')}.jpg`
     );
-    
+
     // Send initial status update
     updateStatus(`Creating ZIP file with ${uniqueUrls.length} images...`, 0, uniqueUrls.length);
 
@@ -235,9 +235,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Indicate we'll send a response asynchronously
   }
 
-  // Handle request to download all pending chapter images as a single ZIP
+  // Handle request to download all pending chapter images based on format setting
+  // Each chapter gets its own folder/file
   if (message.action === 'downloadPendingChapters') {
-    chrome.storage.local.get(['pendingChapterImages'], (data) => {
+    chrome.storage.local.get(['pendingChapterImages'], async (data) => {
       const pendingImages = data.pendingChapterImages || {};
       const chapters = Object.keys(pendingImages);
 
@@ -246,39 +247,64 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
-      console.log(`Downloading ${chapters.length} pending chapters as a single ZIP`);
+      const downloadFormat = message.downloadFormat || message.settings?.downloadFormat || 'images';
+      console.log(`Downloading ${chapters.length} chapters as separate ${downloadFormat} files`);
 
-      // Flatten all image URLs and organize them by chapter
-      const allImages = [];
-      chapters.forEach(chapterPath => {
+      const settings = message.settings || {
+        downloadDelay: 300,
+        batchSize: 3
+      };
+
+      // Process each chapter separately
+      for (let chapterIndex = 0; chapterIndex < chapters.length; chapterIndex++) {
+        const chapterPath = chapters[chapterIndex];
         const chapterImages = pendingImages[chapterPath];
-        chapterImages.forEach((url, index) => {
-          allImages.push({
-            url: url,
-            path: `${chapterPath}/${(index + 1).toString().padStart(3, '0')}.jpg`
-          });
-        });
-      });
 
-      // Create a ZIP file with all images
-      const mangaTitle = chapters[0].split('/')[0]; // Extract manga title from first chapter path
+        // chapterPath is like "MangaTitle/Chapter 1"
+        const pathParts = chapterPath.split('/');
+        const mangaTitle = pathParts[0];
+        const chapterName = pathParts.slice(1).join('/') || `Chapter ${chapterIndex + 1}`;
 
-      // Create ZIP directly in the background script
-      createAndDownloadZip(
-        allImages.map(img => img.url),
-        allImages.map(img => img.path),
-        mangaTitle,
-        message.settings || {
-          downloadDelay: 300,
-          batchSize: 3
+        // Create image objects for this chapter
+        const chapterImageObjects = chapterImages.map((url, index) => ({
+          url: url,
+          path: `${chapterPath}/${(index + 1).toString().padStart(3, '0')}.jpg`
+        }));
+
+        updateStatus(`Processing chapter ${chapterIndex + 1}/${chapters.length}: ${chapterName}...`, chapterIndex, chapters.length);
+
+        if (downloadFormat === 'pdf') {
+          // Create PDF for this chapter
+          updateStatus(`Creating PDF for ${chapterName}...`, chapterIndex, chapters.length);
+          await createAndDownloadPdf(
+            chapterImages,
+            chapterPath, // Full path: MangaTitle/ChapterName
+            settings
+          );
+          // Wait a bit between chapters
+          await new Promise(r => setTimeout(r, 1000));
+        } else if (downloadFormat === 'zip') {
+          // Create ZIP for this chapter
+          updateStatus(`Creating ZIP for ${chapterName}...`, chapterIndex, chapters.length);
+          await createAndDownloadZip(
+            chapterImages,
+            chapterImages.map((_, i) => `${chapterPath}/${(i + 1).toString().padStart(3, '0')}.jpg`),
+            chapterPath, // Full path: MangaTitle/ChapterName
+            settings
+          );
+          // Wait a bit between chapters
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          // Download as individual images in chapter folder
+          updateStatus(`Downloading images for ${chapterName}...`, chapterIndex, chapters.length);
+          await downloadIndividualImages(chapterImageObjects, settings);
         }
-      );
+      }
 
-      // Clear the pending chapters after creating the ZIP
+      updateStatus(`Completed! Downloaded ${chapters.length} chapters.`, chapters.length, chapters.length);
+
+      // Clear the pending chapters after all downloads
       chrome.storage.local.remove('pendingChapterImages');
-
-      // Update status
-      updateStatus(`Creating ZIP file with ${allImages.length} images from ${chapters.length} chapters...`, 0, allImages.length);
 
       sendResponse({ success: true });
     });
@@ -290,27 +316,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === 'createSingleChapterZip') {
     console.log(`Received request to create SINGLE CHAPTER ZIP with ${message.urls.length} images`);
     console.log(`Folder name: ${message.folderName}`);
-    
+
     // Check if we're already processing this folder
     if (zipDownloadsInProgress.has(message.folderName)) {
       console.log(`ZIP download already in progress for ${message.folderName}, ignoring duplicate request`);
       sendResponse({ success: false, error: 'ZIP download already in progress' });
       return true;
     }
-    
+
     // Mark this folder as being processed
     zipDownloadsInProgress.add(message.folderName);
-    
+
     // Deduplicate URLs
     const uniqueUrls = [...new Set(message.urls)];
-    
+
     console.log(`After deduplication: ${uniqueUrls.length} unique URLs (was ${message.urls.length})`);
-    
+
     // Create simple sequential paths
-    const uniquePaths = uniqueUrls.map((_, index) => 
+    const uniquePaths = uniqueUrls.map((_, index) =>
       `${message.folderName}/${(index + 1).toString().padStart(3, '0')}.jpg`
     );
-    
+
     // Send initial status update
     updateStatus(`Creating ZIP file with ${uniqueUrls.length} images...`, 0, uniqueUrls.length);
 
@@ -331,6 +357,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+
+  // Handle SINGLE CHAPTER PDF download request
+  if (message.action === 'createSingleChapterPdf') {
+    console.log(`Received request to create SINGLE CHAPTER PDF with ${message.urls.length} images`);
+    console.log(`Folder name: ${message.folderName}`);
+
+    // Deduplicate URLs
+    const uniqueUrls = [...new Set(message.urls)];
+    console.log(`After deduplication: ${uniqueUrls.length} unique URLs`);
+
+    // Send initial status update
+    updateStatus(`Creating PDF file with ${uniqueUrls.length} images...`, 0, uniqueUrls.length);
+
+    // Use the PDF generator (same as batch PDF)
+    createAndDownloadPdf(
+      uniqueUrls,
+      message.folderName,
+      message.settings || { downloadDelay: 300 }
+    );
+
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // Helper function to update status and broadcast to all extension pages
@@ -342,7 +391,7 @@ function updateStatus(status, current, total) {
     downloadStatus.total = total;
   }
   downloadStatus.inProgress = !status.includes('Completed') &&
-                             !status.includes('Error');
+    !status.includes('Error');
 
   // Forward to all extension pages
   try {
@@ -397,9 +446,9 @@ function extractChapterImages(folderPath, settings) {
         console.log(`Trying selector: ${selector}`);
         const found = Array.from(document.querySelectorAll(selector))
           .filter(img => img.src && img.width > 100);
-        
+
         console.log(`Found ${found.length} images with selector: ${selector}`);
-        
+
         // Add to our unique images Map
         found.forEach(img => {
           if (!uniqueImages.has(img.src)) {
@@ -407,7 +456,7 @@ function extractChapterImages(folderPath, settings) {
           }
         });
       }
-      
+
       // Convert Map to Array
       images = Array.from(uniqueImages.values());
 
@@ -444,17 +493,17 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
   try {
     console.log('Starting ZIP creation process in background');
     console.log(`Original URLs count: ${urls.length}`);
-    
+
     // Use settings or defaults
     const downloadDelay = settings?.downloadDelay || 300;
 
     console.log(`Using settings: delay=${downloadDelay}ms`);
-    
+
     // First, deduplicate URLs to ensure we don't process the same image twice
     const uniqueUrls = [];
     const uniquePaths = [];
     const urlSet = new Set();
-    
+
     // Create arrays of unique URLs and their corresponding paths
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i];
@@ -470,7 +519,7 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
     }
 
     console.log(`After deduplication: ${uniqueUrls.length} unique URLs (was ${urls.length})`);
-    
+
     // IMPORTANT: If this is a single chapter download (indicated by a flag in the message),
     // make sure we're not creating multiple chapter folders
     if (settings && settings.isCurrentChapter) {
@@ -496,8 +545,8 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
 
       try {
         // Send progress update
-        updateStatus(`Adding image ${i+1}/${uniqueUrls.length} to ZIP...`, i, uniqueUrls.length);
-        console.log(`Processing image ${i+1}/${uniqueUrls.length}: ${url}`);
+        updateStatus(`Adding image ${i + 1}/${uniqueUrls.length} to ZIP...`, i, uniqueUrls.length);
+        console.log(`Processing image ${i + 1}/${uniqueUrls.length}: ${url}`);
         console.log(`Using path: ${path}`);
 
         // Try to fetch the image
@@ -535,7 +584,7 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
           try {
             zip.file(path, blob);
             downloadedCount++;
-            console.log(`Successfully added image ${i+1} to ZIP as ${path}`);
+            console.log(`Successfully added image ${i + 1} to ZIP as ${path}`);
           } catch (error) {
             console.error(`Error adding file to ZIP: ${error.message}`);
             failedCount++;
@@ -545,7 +594,7 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
           failedCount++;
         }
       } catch (error) {
-        console.error(`Error processing image ${i+1}:`, error);
+        console.error(`Error processing image ${i + 1}:`, error);
         failedCount++;
       }
 
@@ -572,7 +621,7 @@ async function createAndDownloadZip(urls, paths, folderName, settings) {
 
     // Convert the blob to a data URL
     const reader = new FileReader();
-    reader.onload = function() {
+    reader.onload = function () {
       const dataUrl = reader.result;
 
       // Use the downloads API to download the file
@@ -614,11 +663,11 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
   try {
     console.log('Starting SINGLE CHAPTER ZIP creation process');
     console.log(`Processing ${urls.length} URLs`);
-    
+
     // Use settings or defaults
     const downloadDelay = settings?.downloadDelay || 300;
     console.log(`Using settings: delay=${downloadDelay}ms`);
-    
+
     // Send initial progress update
     updateStatus(`Creating ZIP file with ${urls.length} images...`, 0, urls.length);
 
@@ -634,8 +683,8 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
 
       try {
         // Send progress update
-        updateStatus(`Adding image ${i+1}/${urls.length} to ZIP...`, i, urls.length);
-        console.log(`Processing image ${i+1}/${urls.length}: ${url}`);
+        updateStatus(`Adding image ${i + 1}/${urls.length} to ZIP...`, i, urls.length);
+        console.log(`Processing image ${i + 1}/${urls.length}: ${url}`);
 
         // Try to fetch the image
         let blob = null;
@@ -672,7 +721,7 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
           try {
             zip.file(path, blob);
             downloadedCount++;
-            console.log(`Successfully added image ${i+1} to ZIP as ${path}`);
+            console.log(`Successfully added image ${i + 1} to ZIP as ${path}`);
           } catch (error) {
             console.error(`Error adding file to ZIP: ${error.message}`);
             failedCount++;
@@ -682,7 +731,7 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
           failedCount++;
         }
       } catch (error) {
-        console.error(`Error processing image ${i+1}:`, error);
+        console.error(`Error processing image ${i + 1}:`, error);
         failedCount++;
       }
 
@@ -707,8 +756,8 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
     // Convert the blob to a data URL
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      
-      reader.onload = function() {
+
+      reader.onload = function () {
         const dataUrl = reader.result;
 
         // Use the downloads API to download the file
@@ -723,7 +772,7 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
             reject(chrome.runtime.lastError);
           } else {
             console.log(`ZIP download started with ID: ${downloadId}`);
-            
+
             // Determine status message based on success/failure
             let statusMessage;
             if (failedCount === 0) {
@@ -737,8 +786,8 @@ async function createSingleChapterZip(urls, paths, folderName, settings) {
           }
         });
       };
-      
-      reader.onerror = function() {
+
+      reader.onerror = function () {
         console.error('Error reading ZIP blob as data URL');
         updateStatus(`Error creating ZIP file: Failed to read ZIP data`, 0, 1);
         reject(reader.error);
@@ -800,24 +849,24 @@ function fetchImageAsBlob(url) {
       },
       referrerPolicy: 'origin',
     })
-    .then(response => {
-      // In no-cors mode, we'll get an opaque response
-      return response.blob();
-    })
-    .then(blob => {
-      // Check if the blob is valid (has size)
-      if (blob.size > 0) {
-        console.log(`Direct fetch succeeded for: ${url}`);
-        resolve(blob);
-      } else {
-        console.warn(`Direct fetch returned empty blob for: ${url}`);
+      .then(response => {
+        // In no-cors mode, we'll get an opaque response
+        return response.blob();
+      })
+      .then(blob => {
+        // Check if the blob is valid (has size)
+        if (blob.size > 0) {
+          console.log(`Direct fetch succeeded for: ${url}`);
+          resolve(blob);
+        } else {
+          console.warn(`Direct fetch returned empty blob for: ${url}`);
+          resolve(null);
+        }
+      })
+      .catch(error => {
+        console.warn(`Direct fetch failed for ${url}: ${error.message}`);
         resolve(null);
-      }
-    })
-    .catch(error => {
-      console.warn(`Direct fetch failed for ${url}: ${error.message}`);
-      resolve(null);
-    });
+      });
 
     // Set a timeout for the fetch operation
     setTimeout(() => {
@@ -837,7 +886,7 @@ function xhrFetchAsBlob(url) {
     xhr.responseType = 'blob';
     xhr.timeout = 30000; // 30 second timeout
 
-    xhr.onload = function() {
+    xhr.onload = function () {
       if (this.status === 200) {
         // Check if the blob is valid (has size)
         if (this.response && this.response.size > 0) {
@@ -853,12 +902,12 @@ function xhrFetchAsBlob(url) {
       }
     };
 
-    xhr.onerror = function() {
+    xhr.onerror = function () {
       console.warn(`XHR fetch network error for: ${url}`);
       resolve(null);
     };
 
-    xhr.ontimeout = function() {
+    xhr.ontimeout = function () {
       console.warn(`XHR fetch timed out for: ${url}`);
       resolve(null);
     };
@@ -881,6 +930,104 @@ function xhrFetchAsBlob(url) {
   });
 }
 
+// Function to create and download a PDF file from images
+async function createAndDownloadPdf(urls, folderName, settings) {
+  try {
+    console.log('Starting PDF creation process');
+    console.log(`Processing ${urls.length} images`);
+
+    // Deduplicate URLs
+    const uniqueUrls = [...new Set(urls)];
+    console.log(`After deduplication: ${uniqueUrls.length} unique URLs`);
+
+    updateStatus(`Opening PDF generator for ${uniqueUrls.length} images...`, 0, uniqueUrls.length);
+
+    // Store only the URLs (small data, won't hit quota)
+    // The PDF generator page will fetch images itself
+    await chrome.storage.local.set({
+      pdfGeneratorData: {
+        imageUrls: uniqueUrls,
+        folderName: folderName
+      }
+    });
+
+    // Open our dedicated PDF generator page (works regardless of active tab)
+    console.log('Opening PDF generator page...');
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('pdf-generator.html'),
+      active: false
+    });
+
+  } catch (error) {
+    console.error('Error creating PDF:', error);
+    updateStatus(`Error creating PDF: ${error.message}`, 0, 1);
+  }
+}
+
+// Helper to convert blob to base64
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 
+// Function to download images individually (not as ZIP or PDF)
+async function downloadIndividualImages(allImages, settings) {
+  try {
+    console.log('Starting individual image downloads');
+    console.log(`Processing ${allImages.length} images`);
 
+    const downloadDelay = settings?.downloadDelay || 300;
+    let downloadedCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < allImages.length; i++) {
+      const image = allImages[i];
+
+      updateStatus(`Downloading image ${i + 1}/${allImages.length}...`, i, allImages.length);
+
+      try {
+        await new Promise((resolve) => {
+          chrome.downloads.download({
+            url: image.url,
+            filename: image.path,
+            saveAs: false,
+            conflictAction: 'uniquify'
+          }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+              console.error('Download error:', chrome.runtime.lastError);
+              failedCount++;
+            } else {
+              console.log(`Download started: ${image.path}`);
+              downloadedCount++;
+            }
+            resolve();
+          });
+        });
+      } catch (error) {
+        console.error(`Error downloading image ${i + 1}:`, error);
+        failedCount++;
+      }
+
+      // Brief pause between downloads
+      await new Promise(resolve => setTimeout(resolve, downloadDelay));
+    }
+
+    // Final status
+    let statusMessage;
+    if (failedCount === 0) {
+      statusMessage = `Completed! Downloaded ${downloadedCount} images.`;
+    } else {
+      statusMessage = `Completed with issues. Downloaded ${downloadedCount} images, failed: ${failedCount}`;
+    }
+
+    updateStatus(statusMessage, allImages.length, allImages.length);
+  } catch (error) {
+    console.error('Error downloading images:', error);
+    updateStatus(`Error downloading images: ${error.message}`, 0, 1);
+  }
+}

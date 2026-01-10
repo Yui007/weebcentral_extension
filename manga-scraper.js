@@ -41,9 +41,9 @@ function scrapeAllChaptersFromPage() {
         // Check if text contains relevant phrases
         const text = el.textContent.toLowerCase();
         if (text.includes('show all') ||
-            text.includes('load more') ||
-            text.includes('show all chapters') ||
-            text.includes('view more')) {
+          text.includes('load more') ||
+          text.includes('show all chapters') ||
+          text.includes('view more')) {
 
           console.log('Found "show more" button, clicking it...', el);
           el.click();
@@ -56,10 +56,10 @@ function scrapeAllChaptersFromPage() {
           for (const btn of moreButtons) {
             const btnText = btn.textContent.toLowerCase();
             if ((btnText.includes('show all') ||
-                 btnText.includes('load more') ||
-                 btnText.includes('show all chapters') ||
-                 btnText.includes('view more')) &&
-                btn !== el) {
+              btnText.includes('load more') ||
+              btnText.includes('show all chapters') ||
+              btnText.includes('view more')) &&
+              btn !== el) {
               console.log('Found additional button, clicking it...', btn);
               btn.click();
               // Wait between clicks
@@ -80,40 +80,29 @@ function scrapeAllChaptersFromPage() {
 
   // Function to scrape chapter URLs
   async function scrapeChapterUrls() {
-    // Now scrape the chapter URLs
-    // First try WeebCentral specific selectors
-    let chapterLinks = Array.from(document.querySelectorAll('div[x-data] > a'));
+    // WeebCentral selectors based on user feedback
+    // Chapters are direct children of #chapter-list or inside div.flex.items-center
 
-    // If no chapters found with specific selector, try generic selectors
+    // First try the specific structure provided
+    let chapterLinks = Array.from(document.querySelectorAll('#chapter-list > div.flex.items-center > a[href*="/chapters/"]'));
+
     if (chapterLinks.length === 0) {
-      console.log('No chapters found with WeebCentral specific selector, trying generic selectors');
-      chapterLinks = Array.from(document.querySelectorAll('a[href*="chapter"]'));
-
-      // If still no chapters, try links that might be chapters
-      if (chapterLinks.length === 0) {
-        console.log('No chapters found with chapter keyword, trying all links');
-        chapterLinks = Array.from(document.querySelectorAll('a'))
-          .filter(link => {
-            const href = link.getAttribute('href');
-            return href && (
-              href.includes('chapters/') ||
-              href.includes('chapter/') ||
-              href.includes('read/')
-            );
-          });
-      }
+      // Try slightly broader selector in #chapter-list
+      chapterLinks = Array.from(document.querySelectorAll('#chapter-list a[href*="/chapters/"]'));
     }
 
-    console.log(`Found ${chapterLinks.length} potential chapter links`);
+    console.log(`Found ${chapterLinks.length} chapter links`);
+
+    // Fallback search if still empty
+    if (chapterLinks.length === 0) {
+      console.log('No chapters found with primary selectors, trying alternatives...');
+      chapterLinks = Array.from(document.querySelectorAll('a[href*="/chapters/"]'));
+    }
 
     // Filter and map to get clean chapter URLs
     const chapterUrls = chapterLinks
       .map(link => link.href)
-      .filter(url => url && (
-        url.includes('chapter') ||
-        url.includes('chapters/') ||
-        url.includes('read/')
-      ));
+      .filter(url => url && url.includes('/chapters/'));
 
     // Remove duplicates
     const uniqueChapterUrls = [...new Set(chapterUrls)];
@@ -133,7 +122,7 @@ function scrapeAllChaptersFromPage() {
       /\/(\d+(\.\d+)?)$/,
       /\/chapters\/(\d+)/i
     ];
-    
+
     for (const pattern of urlPatterns) {
       const match = url.match(pattern);
       if (match && match[1]) {
@@ -154,7 +143,7 @@ function scrapeAllChaptersFromPage() {
         /ep\.\s*(\d+(\.\d+)?)/i,
         /ep\s+(\d+(\.\d+)?)/i
       ];
-      
+
       for (const pattern of textPatterns) {
         const match = text.match(pattern);
         if (match && match[1]) {
@@ -177,10 +166,10 @@ function scrapeAllChaptersFromPage() {
     try {
       const urlObj = new URL(url);
       const params = urlObj.searchParams;
-      
+
       // Common query parameter names for chapter numbers
       const paramNames = ['chapter', 'ch', 'c', 'num', 'n'];
-      
+
       for (const name of paramNames) {
         if (params.has(name)) {
           const value = params.get(name);
@@ -220,74 +209,85 @@ function scrapeAllChaptersFromPage() {
 
     // Extract chapter information
     const chapters = [];
-    
-    // Get all chapter links with their text content
-    const chapterLinks = Array.from(document.querySelectorAll('a[href*="chapter"], div[x-data] > a, a[href*="chapters/"], a[href*="read/"]'));
-    
+
+    // Get all chapter links with their text content from #chapter-list
+    let chapterLinks = Array.from(document.querySelectorAll('#chapter-list a[href*="/chapters/"]'));
+
+    // Fallback if #chapter-list not found
+    if (chapterLinks.length === 0) {
+      chapterLinks = Array.from(document.querySelectorAll('a[href*="/chapters/"]'));
+    }
+
     console.log(`Found ${chapterLinks.length} chapter links with text content`);
-    
+
     // Create a map of URLs to their text content
+    // For WeebCentral, the chapter name is in span.grow > span:first-child
     const urlToTextMap = new Map();
     chapterLinks.forEach(link => {
       if (link.href) {
-        urlToTextMap.set(link.href, link.textContent.trim());
+        // Try to get chapter name from span.grow > span:first-child
+        const chapterNameSpan = link.querySelector('span.grow > span:first-child');
+        let chapterText = '';
+
+        if (chapterNameSpan) {
+          chapterText = chapterNameSpan.textContent.trim();
+        } else {
+          // Fallback to full text content
+          chapterText = link.textContent.trim();
+        }
+
+        urlToTextMap.set(link.href, chapterText);
       }
     });
 
     // Process each URL
     for (let i = 0; i < chapterUrls.length; i++) {
       const url = chapterUrls[i];
-      const text = urlToTextMap.get(url) || '';
-      
-      // Try to extract chapter number from URL or text
-      let chapterNum = extractChapterNumber(url, text);
-      
-      // If we couldn't extract a number, use the index (reversed to handle newest first)
-      if (!chapterNum) {
-        chapterNum = chapterUrls.length - i;
-      }
-      
-      // For sites that list newest chapters first, we need to extract the actual chapter number
-      // Try to extract from text content first
-      const chapterMatch = text.match(/chapter\s+(\d+(\.\d+)?)/i) || 
-                           text.match(/ch\.\s*(\d+(\.\d+)?)/i) ||
-                           text.match(/ch\s+(\d+(\.\d+)?)/i) ||
-                           text.match(/^(\d+(\.\d+)?)$/);
-      
-      if (chapterMatch && chapterMatch[1]) {
-        chapterNum = parseFloat(chapterMatch[1]);
-      } else {
-        // Try to extract from URL
-        const urlMatch = url.match(/chapter[_\-](\d+(\.\d+)?)/i) || 
-                         url.match(/ch[_\-](\d+(\.\d+)?)/i) ||
-                         url.match(/\/(\d+(\.\d+)?)$/);
-        
-        if (urlMatch && urlMatch[1]) {
-          chapterNum = parseFloat(urlMatch[1]);
+      let chapterName = '';
+      let chapterNum = 0;
+
+      // Find the element again to extract valid text
+      // We look for the link with this specific URL
+      const linkEl = document.querySelector(`a[href="${url.replace(window.location.origin, '')}"]`) ||
+        document.querySelector(`a[href="${url}"]`);
+
+      if (linkEl) {
+        // Structure: a > span.grow > span (contains "Chapter X")
+        const nameSpan = linkEl.querySelector('span.grow > span:first-child');
+        if (nameSpan) {
+          chapterName = nameSpan.textContent.trim();
+        } else {
+          // Fallback: try to find any text node in the link or span
+          chapterName = linkEl.textContent.trim();
         }
-      }
-      
-      // Clean up the chapter name
-      let chapterName = text;
-      if (!chapterName || chapterName.length < 2) {
+
+        // Extract Number
+        // First try strict "Chapter X" or number regex
+        const numMatch = chapterName.match(/Chapter\s+(\d+(\.\d+)?)/i) ||
+          chapterName.match(/^(\d+(\.\d+)?)$/);
+
+        if (numMatch) {
+          chapterNum = parseFloat(numMatch[1]);
+        } else {
+          // Fallback to URL extraction if name extraction fails
+          chapterNum = extractChapterNumber(url, chapterName);
+        }
+      } else {
+        // Fallback if element not found in DOM anymore (rare)
+        chapterNum = extractChapterNumber(url, '');
         chapterName = `Chapter ${chapterNum}`;
-      } else {
-        // Clean up the name
-        chapterName = cleanChapterName(chapterName);
-        
-        // If the cleaned name doesn't contain the chapter number, add it
-        if (!chapterName.match(/chapter\s+\d+/i) && !chapterName.match(/ch\.\s*\d+/i)) {
-          chapterName = `Chapter ${chapterNum} - ${chapterName}`;
-        }
       }
-      
+
+      // Final fallback for chapter number
+      if (!chapterNum) chapterNum = 0;
+
       chapters.push({
         url: url,
         name: chapterName,
         number: chapterNum
       });
-      
-      console.log(`Processed chapter: ${chapterName} (${chapterNum}) - ${url}`);
+
+      console.log(`Processed: ${chapterName} (${chapterNum})`);
     }
 
     // Helper function to clean up chapter names
@@ -322,7 +322,10 @@ class MangaScraper {
     this.settings = {
       downloadDelay: settings.downloadDelay || 300,
       batchSize: settings.batchSize || 3,
+      imageConcurrency: settings.imageConcurrency || 3,
+      chapterConcurrency: settings.chapterConcurrency || 1,
       chapterDelay: settings.chapterDelay || 1000,
+      downloadFormat: settings.downloadFormat || 'images',
       maxRetries: 3,
       retryDelay: 1000
     };
@@ -408,68 +411,75 @@ class MangaScraper {
     }
   }
 
-  async getChapters(mangaUrl) {
+  async getChapters(mangaUrl, tabId = null) {
     try {
       const chapterListUrl = this.getChapterListUrl(mangaUrl);
       console.log("Fetching chapter list from:", chapterListUrl);
 
-      // Create a tab to load the manga page and ensure all chapters are visible
-      return new Promise((resolve) => {
-        chrome.tabs.create({
-          url: chapterListUrl,
-          active: false
-        }, async (tab) => {
-          try {
-            // Wait a moment to ensure the page loads
-            await new Promise(r => setTimeout(r, 3000));
-            
-            // Execute script to ensure all chapters are visible and scrape them
-            chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              func: scrapeAllChaptersFromPage
-            }, (results) => {
-              // Close the tab after scraping
-              chrome.tabs.remove(tab.id);
-
-              if (results && results[0] && results[0].result) {
-                const chapters = results[0].result;
-                console.log(`Found ${chapters.length} unique chapters`);
-                
-                // Validate chapter numbers
-                const validatedChapters = chapters.map(chapter => {
-                  // Ensure chapter has a valid number
-                  if (!chapter.number || isNaN(chapter.number)) {
-                    console.warn(`Chapter has invalid number: ${chapter.name}, URL: ${chapter.url}`);
-                    // Try to extract from name
-                    const nameMatch = chapter.name.match(/chapter\s+(\d+(\.\d+)?)/i);
-                    if (nameMatch && nameMatch[1]) {
-                      chapter.number = parseFloat(nameMatch[1]);
-                    } else {
-                      // Default to 0 if we can't extract a number
-                      chapter.number = 0;
-                    }
-                  }
-                  return chapter;
-                });
-                
-                resolve(validatedChapters);
-              } else {
-                console.error("Failed to scrape chapters");
-                resolve([]);
-              }
-            });
-          } catch (error) {
-            // Make sure to close the tab even if there's an error
-            chrome.tabs.remove(tab.id);
-            console.error("Error in getChapters:", error);
-            resolve([]);
-          }
+      // Helper to execute script
+      const executeScrape = async (targetTabId) => {
+        return new Promise((resolve) => {
+          chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            func: scrapeAllChaptersFromPage
+          }, (results) => {
+            if (results && results[0] && results[0].result) {
+              const chapters = results[0].result;
+              console.log(`Found ${chapters.length} unique chapters`);
+              resolve(this.validateChapters(chapters));
+            } else {
+              console.error("Failed to scrape chapters");
+              resolve([]);
+            }
+          });
         });
-      });
+      };
+
+      if (tabId) {
+        // Use existing tab - fast path
+        console.log("Scraping existing tab:", tabId);
+        return await executeScrape(tabId);
+      } else {
+        // Create new tab - slow path (fallback)
+        return new Promise((resolve) => {
+          chrome.tabs.create({
+            url: chapterListUrl,
+            active: false
+          }, async (tab) => {
+            try {
+              // Wait a moment for page load
+              await new Promise(r => setTimeout(r, 3000));
+
+              const chapters = await executeScrape(tab.id);
+              chrome.tabs.remove(tab.id);
+              resolve(chapters);
+            } catch (error) {
+              chrome.tabs.remove(tab.id);
+              console.error("Error in getChapters (new tab):", error);
+              resolve([]);
+            }
+          });
+        });
+      }
     } catch (error) {
       console.error("Error getting chapters:", error);
       return [];
     }
+  }
+
+  validateChapters(chapters) {
+    return chapters.map(chapter => {
+      if (!chapter.number || isNaN(chapter.number)) {
+        console.warn(`Chapter has invalid number: ${chapter.name}, URL: ${chapter.url}`);
+        const nameMatch = chapter.name.match(/chapter\s+(\d+(\.\d+)?)/i);
+        if (nameMatch && nameMatch[1]) {
+          chapter.number = parseFloat(nameMatch[1]);
+        } else {
+          chapter.number = 0;
+        }
+      }
+      return chapter;
+    });
   }
 
   parseChapterRange(chapterRange, chapters) {
@@ -540,14 +550,14 @@ class MangaScraper {
           total: totalChapters,
           chapterName: chapter.name,
           mangaTitle: mangaTitle,
-          status: `Processing chapter ${i+1}/${totalChapters}: ${chapter.name}`
+          status: `Processing chapter ${i + 1}/${totalChapters}: ${chapter.name}`
         };
 
         if (progressCallback) {
           progressCallback(chapterProgress);
         }
 
-        console.log(`Processing chapter ${i+1}/${totalChapters}: ${chapter.name} (${chapter.url})`);
+        console.log(`Processing chapter ${i + 1}/${totalChapters}: ${chapter.name} (${chapter.url})`);
 
         // Send message to background script to handle the chapter processing
         await new Promise(resolve => {
@@ -571,22 +581,26 @@ class MangaScraper {
         }
       }
 
-      // After all chapters are processed, download them as a single ZIP
+      // After all chapters are processed, download based on format setting
       if (totalProcessed > 0 && !this.stopFlag) {
+        const format = this.settings.downloadFormat || 'images';
+
         if (progressCallback) {
+          let formatText = format === 'pdf' ? 'PDF' : format === 'zip' ? 'ZIP' : 'images';
           progressCallback({
             current: totalChapters,
             total: totalChapters,
             mangaTitle: mangaTitle,
-            status: `Creating ZIP file for ${totalProcessed} chapters...`
+            status: `Creating ${formatText} file for ${totalProcessed} chapters...`
           });
         }
 
-        // Send message to background script to create the ZIP file
+        // Send message to background script to create the final file
         await new Promise(resolve => {
           chrome.runtime.sendMessage({
             action: 'downloadPendingChapters',
-            settings: this.settings
+            settings: this.settings,
+            downloadFormat: format
           }, (response) => {
             resolve(response);
           });

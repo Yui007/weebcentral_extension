@@ -3,14 +3,21 @@
   "name": "WeebCentral Downloader",
   "version": "1.0",
   "description": "Download manga chapters from weebcentral.com",
-  "permissions": ["activeTab", "downloads", "scripting", "tabs", "storage"],
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting",
+    "tabs",
+    "storage"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "host_permissions": [
     "*://weebcentral.com/*",
     "*://scans.lastation.us/*",
-    "*://official.lowee.us/*"
+    "*://official.lowee.us/*",
+    "*://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -25,16 +32,24 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://weebcentral.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "*://weebcentral.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["jszip.min.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "jszip.min.js",
+        "jspdf.min.js",
+        "pdf-generator.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
-
-

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>PDF Generator - WeebCentral</title>
+    <script src="jspdf.min.js"></script>
+    <script src="pdf-generator.js" defer></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #7c3aed;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            font-size: 18px;
+            margin: 20px 0;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #7c3aed, #a855f7);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .info {
+            font-size: 14px;
+            color: #888;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📄 Generating PDF</h1>
+        <div class="status" id="status">Initializing...</div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="info">This tab will close automatically when complete.</div>
+    </div>
+</body>
+
+</html>
